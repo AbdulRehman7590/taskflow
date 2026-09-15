@@ -4,7 +4,10 @@ import { useState } from "react";
 import { useAtom } from "jotai";
 import { X } from "lucide-react";
 import { editingTaskAtom, isTaskFormOpenAtom } from "@/atoms/taskAtoms";
-import type { Status, TaskInput } from "@/types/task";
+import type { Status, TaskInput } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function TaskForm({
   statuses,
@@ -17,12 +20,14 @@ export default function TaskForm({
   const [, setOpen] = useAtom(isTaskFormOpenAtom);
   const [title, setTitle] = useState(editing?.title ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
+
   const [status, setStatus] = useState(
     editing?.status ?? statuses[0]?.key ?? "",
   );
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+
     if (!title.trim() || !status) return;
     await onSave({
       title: title.trim(),
@@ -69,7 +74,7 @@ export default function TaskForm({
         <div className="space-y-5">
           <label className="flex flex-col gap-2 text-sm font-bold">
             Title
-            <input
+            <Input
               autoFocus
               value={title}
               onChange={(event) => setTitle(event.target.value)}
@@ -79,7 +84,7 @@ export default function TaskForm({
           </label>
           <label className="flex flex-col gap-2 text-sm font-bold">
             Description
-            <textarea
+            <Textarea
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Add a little context..."
@@ -103,19 +108,12 @@ export default function TaskForm({
           </label>
         </div>
         <div className="mt-8 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={close}
-            className="rounded-xl px-4 py-2.5 text-sm font-bold text-muted-foreground hover:bg-muted"
-          >
+          <Button type="button" onClick={close} variant="ghost">
             Cancel
-          </button>
-          <button
-            type="submit"
-            className="rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white hover:bg-sky-700"
-          >
+          </Button>
+          <Button type="submit" className="bg-slate-950 hover:bg-sky-700">
             {editing ? "Save changes" : "Create task"}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

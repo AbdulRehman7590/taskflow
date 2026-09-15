@@ -7,6 +7,26 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+export const users = pgTable(
+  "users",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role").notNull().default("user"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({ emailIndex: uniqueIndex("users_email_idx").on(table.email) }),
+);
+
+export const sessions = pgTable("sessions", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const statuses = pgTable(
   "statuses",
   {

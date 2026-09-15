@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 export class ApiError extends Error {
   status: number;
@@ -56,6 +56,20 @@ export function validateStatusInput(body: Record<string, unknown>) {
   }
 }
 
+export async function readJson(
+  request: Request,
+): Promise<Record<string, unknown>> {
+  try {
+    const body = await request.json();
+    if (!body || Array.isArray(body) || typeof body !== "object")
+      throw new ApiError("Request body must be a JSON object.", 400);
+    return body as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("Request body must contain valid JSON.", 400);
+  }
+}
+
 export function errorResponse(error: unknown, route: string) {
   const cause = (error as { cause?: { code?: string } }).cause;
   const value = error as { code?: string };
@@ -65,4 +79,17 @@ export function errorResponse(error: unknown, route: string) {
     { message: publicError({ ...value, code }) },
     { status: value instanceof ApiError ? value.status : 500 },
   );
+}
+
+export function withApiHandler<TContext>(
+  route: string,
+  handler: (request: NextRequest, context: TContext) => Promise<NextResponse>,
+) {
+  return async (request: NextRequest, context: TContext) => {
+    try {
+      return await handler(request, context);
+    } catch (error) {
+      return errorResponse(error, route);
+    }
+  };
 }

@@ -1,24 +1,10 @@
 import { asc, desc, eq } from "drizzle-orm";
-import { db, initializeDatabase } from "./db";
-import { statuses, tasks } from "./db/schema";
+import { db, initializeDatabase } from "@/lib/db";
+import { statuses, tasks } from "@/lib/db/schema";
+import type { StatusInput, TaskInput } from "@/types";
 
-export type TaskInput = {
-  title: string;
-  description?: string;
-  status?: string;
-};
-export type StatusInput = { name: string };
-
-const completedKey = "COMPLETED";
-
-function orderStatuses<T extends { id: number; key: string; position: number }>(
-  items: T[],
-) {
-  return [...items].sort((left, right) => {
-    if (left.key === completedKey) return 1;
-    if (right.key === completedKey) return -1;
-    return left.position - right.position;
-  });
+function orderStatuses<T extends { position: number }>(items: T[]) {
+  return [...items].sort((left, right) => left.position - right.position);
 }
 
 export const taskService = {
@@ -26,14 +12,17 @@ export const taskService = {
     await initializeDatabase();
     return db.select().from(tasks).orderBy(desc(tasks.createdAt));
   },
+
   async findById(id: number) {
     await initializeDatabase();
     return (await db.select().from(tasks).where(eq(tasks.id, id)))[0];
   },
+
   async create(input: TaskInput) {
     await initializeDatabase();
     return (await db.insert(tasks).values(input).returning())[0];
   },
+
   async update(id: number, input: Partial<TaskInput>) {
     await initializeDatabase();
     return (
@@ -44,10 +33,12 @@ export const taskService = {
         .returning()
     )[0];
   },
+
   async remove(id: number) {
     await initializeDatabase();
     return db.delete(tasks).where(eq(tasks.id, id));
   },
+
   async listStatuses() {
     await initializeDatabase();
     return orderStatuses(
@@ -57,6 +48,7 @@ export const taskService = {
         .orderBy(asc(statuses.position), asc(statuses.id)),
     );
   },
+
   async statusExists(key: string) {
     await initializeDatabase();
     return Boolean(
@@ -68,6 +60,7 @@ export const taskService = {
       )[0],
     );
   },
+
   async createStatus(input: StatusInput) {
     await initializeDatabase();
     const existing = await db
@@ -85,6 +78,7 @@ export const taskService = {
         .returning()
     )[0];
   },
+
   async updateStatus(id: number, input: StatusInput) {
     await initializeDatabase();
     return (
@@ -95,33 +89,32 @@ export const taskService = {
         .returning()
     )[0];
   },
+
   async deleteStatus(id: number) {
     await initializeDatabase();
     const status = (
       await db.select().from(statuses).where(eq(statuses.id, id))
     )[0];
-    if (!status) return "missing";
-    if (status.key === completedKey) return "protected";
+    if (!status) return "missing" as const;
     const assigned = (
       await db
         .select({ id: tasks.id })
         .from(tasks)
         .where(eq(tasks.status, status.key))
     )[0];
-    if (assigned) return "in_use";
+
+    if (assigned) return "in_use" as const;
     await db.delete(statuses).where(eq(statuses.id, id));
-    return "deleted";
+    return "deleted" as const;
   },
+
   async reorderStatuses(orderedIds: number[]) {
     const current = await this.listStatuses();
-    const completed = current.find((status) => status.key === completedKey);
     const requested = orderedIds
       .map((id) => current.find((status) => status.id === id))
       .filter(
-        (status): status is (typeof current)[number] =>
-          status !== undefined && status.key !== completedKey,
+        (status): status is (typeof current)[number] => status !== undefined,
       );
-    if (completed) requested.push(completed);
     await Promise.all(
       requested.map((status, position) =>
         db.update(statuses).set({ position }).where(eq(statuses.id, status.id)),

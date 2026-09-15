@@ -10,17 +10,13 @@ import {
   GripVertical,
   X,
 } from "lucide-react";
-import { taskApi } from "@/lib/api";
-import type { Status } from "@/types/task";
-
-const completedKey = "COMPLETED";
+import { taskApi } from "@/api";
+import type { Status } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 function orderStatuses(statuses: Status[]) {
-  return [...statuses].sort((left, right) => {
-    if (left.key === completedKey) return 1;
-    if (right.key === completedKey) return -1;
-    return left.position - right.position;
-  });
+  return [...statuses].sort((left, right) => left.position - right.position);
 }
 
 export default function StatusManager({
@@ -38,6 +34,7 @@ export default function StatusManager({
 
   async function addStatus(event: React.FormEvent) {
     event.preventDefault();
+
     if (!name.trim()) return;
     setBusy(true);
     try {
@@ -52,6 +49,7 @@ export default function StatusManager({
   async function renameStatus(status: Status) {
     const nextName = window.prompt("Status name", status.name)?.trim();
     if (!nextName || nextName === status.name) return;
+
     const updated = await taskApi.updateStatus(status.id, { name: nextName });
     onChanged(
       statuses.map((item) => (item.id === updated.id ? updated : item)),
@@ -59,12 +57,9 @@ export default function StatusManager({
   }
 
   async function deleteStatus(status: Status) {
-    if (
-      status.key === completedKey ||
-      !window.confirm(`Delete ${status.name}?`)
-    )
-      return;
+    if (!window.confirm(`Delete ${status.name}?`)) return;
     setBusy(true);
+
     try {
       await taskApi.deleteStatus(status.id);
       onChanged(statuses.filter((item) => item.id !== status.id));
@@ -82,14 +77,10 @@ export default function StatusManager({
   async function moveStatus(status: Status, direction: -1 | 1) {
     const index = ordered.findIndex((item) => item.id === status.id);
     const target = index + direction;
-    if (
-      target < 0 ||
-      target >= ordered.length ||
-      ordered[target].key === completedKey
-    )
-      return;
+    if (target < 0 || target >= ordered.length) return;
     const next = [...ordered];
     [next[index], next[target]] = [next[target], next[index]];
+    
     onChanged(await taskApi.reorderStatuses(next.map((item) => item.id)));
   }
 
@@ -121,18 +112,18 @@ export default function StatusManager({
           </button>
         </div>
         <form onSubmit={addStatus} className="mt-6 flex gap-2">
-          <input
+          <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="New status name"
             className="min-w-0 flex-1 rounded-xl border border-input bg-background px-3.5 py-3 outline-none focus:ring-2 focus:ring-sky-500"
           />
-          <button
+          <Button
             disabled={busy}
             className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-50"
           >
             <Plus size={17} /> Add
-          </button>
+          </Button>
         </form>
         <div className="mt-6 space-y-2">
           {ordered.map((status, index) => (
@@ -141,51 +132,41 @@ export default function StatusManager({
               className="flex items-center gap-3 rounded-xl border border-border bg-background px-3 py-3"
             >
               <GripVertical size={16} className="text-muted-foreground/50" />
-              <span
-                className={`size-2.5 rounded-full ${status.key === completedKey ? "bg-emerald-500" : "bg-sky-500"}`}
-              />
+              <span className="size-2.5 rounded-full bg-sky-500" />
               <span className="min-w-0 flex-1 truncate text-sm font-semibold">
                 {status.name}
               </span>
-              {status.key === completedKey ? (
-                <span className="text-xs text-muted-foreground">
-                  Always last
-                </span>
-              ) : (
-                <>
-                  <button
-                    onClick={() => void moveStatus(status, -1)}
-                    disabled={index === 0}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-25"
-                    aria-label={`Move ${status.name} up`}
-                  >
-                    <ArrowUp size={16} />
-                  </button>
-                  <button
-                    onClick={() => void moveStatus(status, 1)}
-                    disabled={index === ordered.length - 2}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-25"
-                    aria-label={`Move ${status.name} down`}
-                  >
-                    <ArrowDown size={16} />
-                  </button>
-                  <button
-                    onClick={() => void renameStatus(status)}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
-                    aria-label={`Rename ${status.name}`}
-                  >
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    onClick={() => void deleteStatus(status)}
-                    disabled={busy}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                    aria-label={`Delete ${status.name}`}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => void moveStatus(status, -1)}
+                disabled={index === 0}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-25"
+                aria-label={`Move ${status.name} up`}
+              >
+                <ArrowUp size={16} />
+              </button>
+              <button
+                onClick={() => void moveStatus(status, 1)}
+                disabled={index === ordered.length - 1}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-25"
+                aria-label={`Move ${status.name} down`}
+              >
+                <ArrowDown size={16} />
+              </button>
+              <button
+                onClick={() => void renameStatus(status)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
+                aria-label={`Rename ${status.name}`}
+              >
+                <Pencil size={16} />
+              </button>
+              <button
+                onClick={() => void deleteStatus(status)}
+                disabled={busy}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                aria-label={`Delete ${status.name}`}
+              >
+                <Trash2 size={16} />
+              </button>
             </div>
           ))}
         </div>

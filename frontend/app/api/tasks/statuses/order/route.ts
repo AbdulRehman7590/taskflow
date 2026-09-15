@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse } from "@/lib/api-handler";
-import { taskService } from "@/lib/task-service";
+import { readJson, withApiHandler } from "@/lib/api-handler";
+import { requireUser, taskService } from "@/services";
 
-export async function PATCH(request: NextRequest) {
-  try {
-    const body = (await request.json()) as { statusIds?: unknown };
+export const PATCH = withApiHandler("PATCH /api/tasks/statuses/order", async (request) => {
+    await requireUser(request, "admin");
+    const body = await readJson(request);
     if (
       !Array.isArray(body.statusIds) ||
       body.statusIds.some((id) => !Number.isInteger(id))
@@ -15,9 +15,6 @@ export async function PATCH(request: NextRequest) {
       );
     }
     return NextResponse.json(
-      await taskService.reorderStatuses(body.statusIds as number[]),
+      await taskService.reorderStatuses(body.statusIds),
     );
-  } catch (error) {
-    return errorResponse(error, "PATCH /api/tasks/statuses/order");
-  }
-}
+});

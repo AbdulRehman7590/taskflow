@@ -24,3 +24,5 @@ export type TaskInput = {
 };
 
 export type StatusInput = { name: string };
+
+export type StatusOrderInput = { statusIds: number[] };

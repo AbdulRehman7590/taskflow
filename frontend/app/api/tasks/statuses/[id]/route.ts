@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse, getId, validateStatusInput } from "@/lib/api-handler";
-import { taskService } from "@/lib/task-service";
+import { getId, readJson, validateStatusInput, withApiHandler } from "@/lib/api-handler";
+import { requireUser, taskService } from "@/services";
+import type { RouteContext } from "@/types";
 
-type Context = { params: Promise<{ id: string }> };
-
-async function update(request: NextRequest, context: Context) {
-  try {
-    const body = (await request.json()) as Record<string, unknown>;
+const update = withApiHandler<RouteContext>("UPDATE /api/tasks/statuses/:id", async (request, context) => {
+    await requireUser(request, "admin");
+    const body = await readJson(request);
     validateStatusInput(body);
     const status = await taskService.updateStatus(
       getId((await context.params).id),
@@ -15,16 +14,13 @@ async function update(request: NextRequest, context: Context) {
     return status
       ? NextResponse.json(status)
       : NextResponse.json({ message: "Status not found" }, { status: 404 });
-  } catch (error) {
-    return errorResponse(error, "UPDATE /api/tasks/statuses/:id");
-  }
-}
+});
 
 export const PATCH = update;
 export const PUT = update;
 
-export async function DELETE(_request: NextRequest, context: Context) {
-  try {
+export const DELETE = withApiHandler<RouteContext>("DELETE /api/tasks/statuses/:id", async (request, context) => {
+    await requireUser(request, "admin");
     const result = await taskService.deleteStatus(
       getId((await context.params).id),
     );
@@ -33,18 +29,10 @@ export async function DELETE(_request: NextRequest, context: Context) {
         { message: "Status not found" },
         { status: 404 },
       );
-    if (result === "protected")
-      return NextResponse.json(
-        { message: "Completed is required and cannot be deleted." },
-        { status: 400 },
-      );
     if (result === "in_use")
       return NextResponse.json(
         { message: "Move the tasks in this status before deleting it." },
         { status: 409 },
       );
     return NextResponse.json({ message: "Status deleted" });
-  } catch (error) {
-    return errorResponse(error, "DELETE /api/tasks/statuses/:id");
-  }
-}
+});
