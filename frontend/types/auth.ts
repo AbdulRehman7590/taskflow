@@ -1,4 +1,12 @@
-export type UserRole = "admin" | "user";
+import type { UserRole } from "@/lib/validations";
+
+export type {
+  AssignableUserRole,
+  LoginInput,
+  SignupInput,
+  UserRole,
+  UserRoleUpdateInput,
+} from "@/lib/validations";
 
 export type AuthUser = {
   id: number;
@@ -10,6 +18,3 @@ export type AuthUser = {
 export type TeamUser = AuthUser & { createdAt: string };
 
 export type AuthMode = "login" | "signup";
-
-export type LoginInput = { email: string; password: string };
-export type SignupInput = LoginInput & { name: string };

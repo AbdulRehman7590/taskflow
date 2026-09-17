@@ -1,19 +1,31 @@
 # Dependencies
-frontend/node_modules/
+node_modules/
 
 # Next.js build output
-frontend/.next/
-frontend/out/
+.next/
+out/
+
+# Deployment
+.vercel/
+
+# Development-only attachment storage
+.uploads/
 
 # Local environment files
-frontend/.env
-frontend/.env.*
-!frontend/.env.example
+.env
+.env.*
+!.env.example
 
-# TypeScript build cache
-frontend/*.tsbuildinfo
+# TypeScript build cache and Next.js generated types
+*.tsbuildinfo
+next-env.d.ts
+
+# Generated agent instruction files
+AGENTS.md
+CLAUDE.md
 
 # Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -1,5 +1,7 @@
 import AuthForm from "@/components/auth-form";
+import { redirectAuthenticatedUser } from "@/services";
 
-export default function SignupPage() {
+export default async function SignupPage() {
+  await redirectAuthenticatedUser();
   return <AuthForm mode="signup" />;
 }

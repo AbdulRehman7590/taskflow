@@ -1,20 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { readJson, withApiHandler } from "@/lib/api-handler";
+import { NextResponse } from "next/server";
+import { parseJson, withApiHandler } from "@/lib/api-handler";
+import { revalidateStatuses } from "@/lib/cache";
+import { statusOrderSchema } from "@/lib/validations";
 import { requireUser, taskService } from "@/services";
 
-export const PATCH = withApiHandler("PATCH /api/tasks/statuses/order", async (request) => {
+export const PATCH = withApiHandler(
+  "PATCH /api/tasks/statuses/order",
+  async (request) => {
     await requireUser(request, "admin");
-    const body = await readJson(request);
-    if (
-      !Array.isArray(body.statusIds) ||
-      body.statusIds.some((id) => !Number.isInteger(id))
-    ) {
-      return NextResponse.json(
-        { message: "statusIds must be an array of integers" },
-        { status: 400 },
-      );
-    }
-    return NextResponse.json(
-      await taskService.reorderStatuses(body.statusIds),
-    );
-});
+    const { statusIds } = await parseJson(request, statusOrderSchema);
+    const statuses = await taskService.reorderStatuses(statusIds);
+    revalidateStatuses();
+    return NextResponse.json(statuses);
+  },
+);

@@ -1,37 +1,47 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { ROUTES, env } from "@/lib/env";
+import { resolveSessionUser } from "@/services/auth-service";
 
-const publicPaths = ["/login", "/signup", "/logout", "/api/auth"];
+const PUBLIC_PATHS = [ROUTES.login, ROUTES.signup, "/api/health"];
 
-export function proxy(request: NextRequest) {
-  const path = request.nextUrl.pathname;
+const ADMIN_PATHS = ["/directory"];
 
-  const isPublic = publicPaths.some(
-    (item) => path === item || path.startsWith(`${item}/`),
-  );
+export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const isApi = pathname.startsWith("/api/");
+  const sessionId = request.cookies.get(env.sessionCookieName)?.value;
+  const user = await resolveSessionUser(sessionId);
 
-  if (isPublic) {
-    return NextResponse.next();
+  if (PUBLIC_PATHS.includes(pathname)) {
+    return user && pathname !== "/api/health"
+      ? NextResponse.redirect(new URL(ROUTES.home, request.url))
+      : NextResponse.next();
   }
 
-  const sessionCookieName =
-    process.env.SESSION_COOKIE_NAME ?? "taskflow_session";
+  if (!user) {
+    return isApi
+      ? NextResponse.json(
+          { message: "You must be signed in to continue." },
+          { status: 401 },
+        )
+      : NextResponse.redirect(new URL(ROUTES.login, request.url));
+  }
 
-  const session = request.cookies.get(sessionCookieName);
-
-  if (!session) {
-    if (path.startsWith("/api/")) {
-      return NextResponse.json(
-        { message: "You must be signed in to continue." },
-        { status: 401 },
-      );
-    }
-
-    return NextResponse.redirect(new URL("/login", request.url));
+  if (
+    user.role !== "admin" &&
+    ADMIN_PATHS.some(
+      (path) => pathname === path || pathname.startsWith(`${path}/`),
+    )
+  ) {
+    return NextResponse.redirect(new URL(ROUTES.home, request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    "/api/:path*",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
+  ],
 };

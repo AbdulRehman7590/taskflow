@@ -1,15 +1,18 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import { randomBytes } from "node:crypto";
 import { compare, hash } from "bcrypt";
 import { eq } from "drizzle-orm";
 import { ApiError } from "@/lib/api-handler";
+import { CACHE_TAGS } from "@/lib/cache";
 import { db, initializeDatabase } from "@/lib/db";
 import { sessions, users } from "@/lib/db/schema";
-import { env } from "@/lib/env";
-import type { AuthUser, UserRole } from "@/types";
+import { ROUTES, env } from "@/lib/env";
+import type { AssignableUserRole, AuthUser, UserRole } from "@/types";
 
-export const SESSION_COOKIE = env.sessionCookieName;
-export const CSRF_COOKIE = env.csrfCookieName;
+const MUTATING_METHODS = ["POST", "PUT", "PATCH", "DELETE"];
 
 function publicUser(user: typeof users.$inferSelect): AuthUser {
   return {
@@ -36,26 +39,46 @@ export async function createSession(userId: number) {
     expires: expiresAt,
     path: "/",
   };
-  jar.set(SESSION_COOKIE, id, { ...shared, httpOnly: true });
-  jar.set(CSRF_COOKIE, csrf, { ...shared, httpOnly: false });
+  jar.set(env.sessionCookieName, id, { ...shared, httpOnly: true });
+  jar.set(env.csrfCookieName, csrf, { ...shared, httpOnly: false });
 }
 
-export async function getSessionUser(): Promise<AuthUser | null> {
+export async function resolveSessionUser(
+  sessionId: string | undefined,
+): Promise<AuthUser | null> {
+  if (!sessionId) return null;
   await initializeDatabase();
-  const id = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!id) return null;
+
   const current = (
     await db
       .select({ session: sessions, user: users })
       .from(sessions)
       .innerJoin(users, eq(sessions.userId, users.id))
-      .where(eq(sessions.id, id))
+      .where(eq(sessions.id, sessionId))
   )[0];
-  if (!current || current.session.expiresAt <= new Date()) {
-    if (current) await db.delete(sessions).where(eq(sessions.id, id));
+
+  if (!current) return null;
+  if (current.session.expiresAt <= new Date()) {
+    await db.delete(sessions).where(eq(sessions.id, sessionId));
     return null;
   }
   return publicUser(current.user);
+}
+
+export const getSessionUser = cache(async (): Promise<AuthUser | null> => {
+  const sessionId = (await cookies()).get(env.sessionCookieName)?.value;
+  return resolveSessionUser(sessionId);
+});
+
+export async function requirePageUser(role?: UserRole) {
+  const user = await getSessionUser();
+  if (!user) redirect(ROUTES.login);
+  if (role && user.role !== role) redirect(ROUTES.home);
+  return user;
+}
+
+export async function redirectAuthenticatedUser() {
+  if (await getSessionUser()) redirect(ROUTES.home);
 }
 
 export async function requireUser(request: Request, role?: UserRole) {
@@ -63,10 +86,11 @@ export async function requireUser(request: Request, role?: UserRole) {
   if (!user) throw new ApiError("You must be signed in to continue.", 401);
   if (role && user.role !== role)
     throw new ApiError("You are not allowed to perform this action.", 403);
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) {
-    const csrf = request.headers.get("x-csrf-token");
-    const expected = (await cookies()).get(CSRF_COOKIE)?.value;
-    if (!csrf || !expected || csrf !== expected)
+
+  if (MUTATING_METHODS.includes(request.method)) {
+    const sent = request.headers.get("x-csrf-token");
+    const expected = (await cookies()).get(env.csrfCookieName)?.value;
+    if (!sent || !expected || sent !== expected)
       throw new ApiError(
         "Security check failed. Refresh the page and try again.",
         403,
@@ -75,12 +99,21 @@ export async function requireUser(request: Request, role?: UserRole) {
   return user;
 }
 
+export async function requireActionUser(role?: UserRole) {
+  const user = await getSessionUser();
+  if (!user) throw new ApiError("You must be signed in to continue.", 401);
+  if (role && user.role !== role)
+    throw new ApiError("You are not allowed to perform this action.", 403);
+  return user;
+}
+
 export async function logout() {
-  const id = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (id) await db.delete(sessions).where(eq(sessions.id, id));
   const jar = await cookies();
-  jar.delete(SESSION_COOKIE);
-  jar.delete(CSRF_COOKIE);
+  const id = jar.get(env.sessionCookieName)?.value;
+  
+  if (id) await db.delete(sessions).where(eq(sessions.id, id));
+  jar.delete(env.sessionCookieName);
+  jar.delete(env.csrfCookieName);
 }
 
 export async function registerUser(
@@ -89,48 +122,41 @@ export async function registerUser(
   password: string,
 ) {
   await initializeDatabase();
-  if (password.length < 8)
-    throw new ApiError("Password must be at least 8 characters.", 400);
-  const normalized = email.trim().toLowerCase();
-  if (
-    (
-      await db
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.email, normalized))
-    )[0]
-  )
+
+  const existing = (
+    await db.select({ id: users.id }).from(users).where(eq(users.email, email))
+  )[0];
+  if (existing)
     throw new ApiError("An account with this email already exists.", 409);
+
   const user = (
     await db
       .insert(users)
       .values({
-        name: name.trim(),
-        email: normalized,
+        name,
+        email,
         passwordHash: await hash(password, env.passwordHashRounds),
         role: "user",
       })
       .returning()
   )[0];
+
   await createSession(user.id);
   return publicUser(user);
 }
 
 export async function loginUser(email: string, password: string) {
   await initializeDatabase();
-  const user = (
-    await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email.trim().toLowerCase()))
-  )[0];
+
+  const user = (await db.select().from(users).where(eq(users.email, email)))[0];
   if (!user || !(await compare(password, user.passwordHash)))
     throw new ApiError("Email or password is incorrect.", 401);
+
   await createSession(user.id);
   return publicUser(user);
 }
 
-export async function listUsers() {
+async function readUsers() {
   await initializeDatabase();
   const result = await db
     .select({
@@ -142,24 +168,31 @@ export async function listUsers() {
     })
     .from(users)
     .orderBy(users.createdAt);
-  return result.map((user) => ({ ...user, role: user.role as UserRole }));
+  return result.map((user) => ({
+    ...user,
+    role: user.role as UserRole,
+    createdAt: user.createdAt.toISOString(),
+  }));
 }
 
-export async function updateUserRole(
-  id: number,
-  role: UserRole,
-  actorId: number,
-) {
+export const listUsers = unstable_cache(readUsers, ["workspace-team"], {
+  revalidate: 300,
+  tags: [CACHE_TAGS.team],
+});
+
+export async function updateUserRole(userId: number, role: AssignableUserRole) {
   await initializeDatabase();
-  if (id === actorId)
-    throw new ApiError("You cannot change your own role.", 403);
-  if (role === "admin")
-    throw new ApiError("Users cannot be promoted to admin.", 403);
-  const target = (await db.select().from(users).where(eq(users.id, id)))[0];
-  if (!target) return null;
-  if (target.role === "admin")
-    throw new ApiError("Admin roles cannot be changed.", 403);
-  return (
-    await db.update(users).set({ role }).where(eq(users.id, id)).returning()
+
+  const target = (await db.select().from(users).where(eq(users.id, userId)))[0];
+  if (!target) throw new ApiError("User not found.", 404);
+
+  if (target.role === "admin") {
+    throw new ApiError("Administrator roles cannot be changed here.", 403);
+  }
+
+  const updated = (
+    await db.update(users).set({ role }).where(eq(users.id, userId)).returning()
   )[0];
+
+  return publicUser(updated);
 }
