@@ -10,6 +10,8 @@ out/
 
 # Development-only attachment storage
 .uploads/
+.tmp/
+coverage/
 
 # Local environment files
 .env
